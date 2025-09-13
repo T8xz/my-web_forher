@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Happy Anniversary Dino 💛</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <!-- Confetti canvas -->
+    <canvas id="fx"></canvas>
+
+    <!-- Latar dot -->
+    <div class="matrix"></div>
+
+    <!-- Nailong di BELAKANG card -->
+    <div id="bg-nailong" aria-hidden="true"></div>
+
+    <div class="center">
+      <div
+        class="card"
+        role="dialog"
+        aria-live="polite"
+        aria-label="Ucapan Anniversary"
+      >
+        <h1>
+          Happy Anniversary DINOKU 🦖
+          <span class="beat heart" aria-hidden="true"></span>
+        </h1>
+
+        <div id="typing" class="type" aria-label="Pesan">
+          <span id="out"></span
+          ><span class="cursor" aria-hidden="true">&nbsp;</span>
+        </div>
+
+        <div class="actions">
+          <button id="start">Buka hadiah kecil 🎁</button>
+          <button id="copy" class="ghost" title="Salin teks">Salin teks</button>
+        </div>
+        <div class="sub" id="hint">
+          Tip: tekan <kbd>Enter</kbd> buat lanjut cepat.
+        </div>
+      </div>
+    </div>
+
+    <!-- Dino maskot -->
+    <img src="assets/nailong.png" alt="Nailong Dino" class="dino" />
+
+    <script>
+      // ====== Pesan ======
+      const lines = [
+        `Hai sayang 🌸`,
+        `Selamat anniversary yaa`,
+        `Kamu itu kayak Nailong: imut, penyayang, bikin hati adem.`,
+        `Kalau aku pasien, kamu adalah perawat yang selalu bikin sembuh 💊`,
+        `Aku anak teknik, kamu anak kesehatan — combo paling gokil.`,
+        `Mau terus jadi partner shift bareng di perjalanan hidup ini? 💍`,
+        `Dari aku T8xz— ILYSM MA BOO 💛`,
+      ];
+      // ====== End ======
+
+      const out = document.getElementById("out");
+      const startBtn = document.getElementById("start");
+      const copyBtn = document.getElementById("copy");
+      const fx = document.getElementById("fx");
+      const ctx = fx.getContext("2d");
+      const bgWrap = document.getElementById("bg-nailong");
+      const card = document.querySelector(".card");
+
+      let iLine = 0,
+        iChar = 0,
+        playing = false,
+        skip = false;
+
+      // Canvas fit
+      function fitCanvas() {
+        const dpr = Math.min(devicePixelRatio || 1, 2);
+        fx.width = innerWidth * dpr;
+        fx.height = innerHeight * dpr;
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.scale(dpr, dpr);
+      }
+      fitCanvas();
+      addEventListener("resize", fitCanvas);
+
+      // ===== Nailong control (NO DUPLICATE) =====
+      const nailongNames = [
+        "assets/nailong.png",
+        "assets/nailong1.png",
+        "assets/nailong2.png",
+        "assets/nailong3.png",
+        "assets/nailong4.png",
+        "assets/nailong5.png",
+      ];
+
+      // pool yang dihabiskan (tanpa duplikat)
+      let remainingSources = [];
+      function resetPool() {
+        remainingSources = [...nailongNames];
+        // acak urutan (hapus blok ini kalau mau urut 0..5)
+        for (let i = remainingSources.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [remainingSources[i], remainingSources[j]] = [
+            remainingSources[j],
+            remainingSources[i],
+          ];
+        }
+      }
+
+      const nailongEls = [];
+      let spawnRunning = false,
+        spawnTimer = null;
+
+      const isMobile = matchMedia("(max-width: 480px)").matches;
+
+      // >>> COMMAND: BESARIN / KECILIN NAILONG (px)
+      const SIZE_RANGE = isMobile ? [150, 210] : [170, 240];
+
+      const MAX_NAILONG = nailongNames.length; // tanpa duplikat
+
+      function getAvoidRect() {
+        const r = card.getBoundingClientRect();
+        const pad = 10;
+        return {
+          x: r.left - pad,
+          y: r.top - pad,
+          w: r.width + pad * 2,
+          h: r.height + pad * 2,
+        };
+      }
+
+      function placeOutsideRect(el, avoid) {
+        const [minW, maxW] = SIZE_RANGE;
+        const w = minW + Math.random() * (maxW - minW);
+        const vw = innerWidth,
+          vh = innerHeight;
+
+        let left,
+          top,
+          tries = 0;
+        do {
+          left = Math.random() * (vw - w);
+          top = Math.random() * (vh - w);
+          tries++;
+        } while (
+          left < avoid.x + avoid.w &&
+          left + w > avoid.x &&
+          top < avoid.y + avoid.h &&
+          top + w > avoid.y &&
+          tries < 30
+        );
+
+        el.style.width = w + "px";
+        el.style.left = left + "px";
+        el.style.top = top + "px";
+        el.style.transform = `rotate(${(Math.random() * 30 - 15).toFixed(
+          1
+        )}deg)`;
+      }
+
+      function dropNailong() {
+        if (!remainingSources.length || nailongEls.length >= MAX_NAILONG)
+          return;
+        const src = remainingSources.shift(); // ambil satu → NO DUPLICATE
+        const img = document.createElement("img");
+        img.src = src;
+        img.alt = "Nailong";
+        img.className = "bg-nailong-img";
+        placeOutsideRect(img, getAvoidRect());
+        img.onload = () => img.classList.add("loaded");
+        bgWrap.appendChild(img);
+        nailongEls.push(img);
+      }
+
+      function spawnLoop() {
+        if (!spawnRunning) return;
+        if (!remainingSources.length) {
+          stopSpawn();
+          return;
+        }
+        dropNailong();
+
+        // >>> COMMAND: DELAY ANTAR FILE (ms)
+        const delay = isMobile
+          ? 900 + Math.random() * 600 // 900–1500ms di HP
+          : 800 + Math.random() * 600; // 800–1400ms di desktop
+        spawnTimer = setTimeout(spawnLoop, delay);
+      }
+
+      function stopSpawn() {
+        spawnRunning = false;
+        if (spawnTimer) clearTimeout(spawnTimer);
+        spawnTimer = null;
+      }
+      function clearAllNailong() {
+        nailongEls.splice(0).forEach((el) => el.remove());
+      }
+
+      // ===== EJECT LOGIC (ganti shuffle) =====
+      // geser semua Nailong ke luar layar, lalu hapus setelah keluar
+      // >>> COMMAND: DURASI & STAGGER EJECT (ms)
+      const EXIT_DURATION = 900; // lamanya geser keluar
+      const EXIT_STAGGER = 140; // jeda antar item
+
+      function ejectAllNailong() {
+        const vw = innerWidth,
+          vh = innerHeight;
+        let remaining = nailongEls.length;
+
+        nailongEls.forEach((el, i) => {
+          const rect = el.getBoundingClientRect();
+          const w = rect.width,
+            h = rect.height;
+          const cx = rect.left + w / 2;
+          const cy = rect.top + h / 2;
+
+          // jarak ke tiap edge → pilih yang terdekat
+          const dLeft = cx,
+            dRight = vw - cx,
+            dTop = cy,
+            dBottom = vh - cy;
+          const minD = Math.min(dLeft, dRight, dTop, dBottom);
+          const margin = 80;
+
+          let targetLeft = parseFloat(el.style.left) || rect.left;
+          let targetTop = parseFloat(el.style.top) || rect.top;
+
+          if (minD === dLeft) targetLeft = -w - margin;
+          else if (minD === dRight) targetLeft = vw + margin;
+          else if (minD === dTop) targetTop = -h - margin;
+          else targetTop = vh + margin;
+
+          setTimeout(() => {
+            // override durasi transisi biar sesuai EXIT_DURATION
+            el.style.transition = `left ${EXIT_DURATION}ms ease, top ${EXIT_DURATION}ms ease, transform ${EXIT_DURATION}ms ease, opacity 300ms ease`;
+            el.style.left = `${targetLeft}px`;
+            el.style.top = `${targetTop}px`;
+            el.style.opacity = "0.9";
+
+            // hapus setelah dipastikan di luar layar
+            setTimeout(() => {
+              const r = el.getBoundingClientRect();
+              const outside =
+                r.right < 0 || r.left > vw || r.bottom < 0 || r.top > vh;
+              if (outside) {
+                el.remove();
+                remaining--;
+                if (remaining === 0) nailongEls.length = 0; // kosongkan array
+              }
+            }, EXIT_DURATION + 60);
+          }, i * EXIT_STAGGER);
+        });
+      }
+
+      // ===== Typing =====
+      function typeNextChar() {
+        if (!playing) return;
+        if (skip) {
+          out.textContent += lines[iLine];
+          iChar = lines[iLine].length;
+        }
+        if (iChar < lines[iLine].length) {
+          out.textContent += lines[iLine][iChar++];
+          setTimeout(typeNextChar, 22 + Math.random() * 35);
+        } else {
+          out.textContent += iLine < lines.length - 1 ? "\n" : "";
+          if (iLine < lines.length - 1) {
+            iLine++;
+            iChar = 0;
+            setTimeout(typeNextChar, 320);
+          } else {
+            stopSpawn(); // stop munculin Nailong baru
+            celebrate(); // confetti
+            ejectAllNailong(); // <<< geser keluar & hapus
+            playing = false;
+          }
+        }
+      }
+
+      function startTyping() {
+        if (playing) return;
+        playing = true;
+        skip = false;
+        iLine = 0;
+        iChar = 0;
+        out.textContent = "";
+
+        // reset Nailong (kosong sebelum tombol)
+        stopSpawn();
+        clearAllNailong();
+        resetPool(); // siapkan 6 file (tanpa duplikat)
+        spawnRunning = true;
+        spawnLoop();
+
+        typeNextChar();
+      }
+
+      addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          !playing ? startTyping() : (skip = true);
+        }
+      });
+      startBtn.addEventListener("click", startTyping);
+
+      // Copy text
+      copyBtn.addEventListener("click", async () => {
+        const text = lines.join("\n");
+        try {
+          await navigator.clipboard.writeText(text);
+          copyBtn.textContent = "Tersalin ✓";
+          setTimeout(() => (copyBtn.textContent = "Salin teks"), 1200);
+        } catch {
+          copyBtn.textContent = "Gagal menyalin :(";
+          setTimeout(() => (copyBtn.textContent = "Salin teks"), 1200);
+        }
+      });
+
+      // ===== Confetti =====
+      let confetti = [];
+      function celebrate() {
+        const count = 120;
+        for (let i = 0; i < count; i++) {
+          const isEgg = Math.random() < 0.5;
+          confetti.push({
+            x: Math.random() * innerWidth,
+            y: -10 - Math.random() * innerHeight * 0.5,
+            s: 2 + Math.random() * 4,
+            w: isEgg ? 10 : 14,
+            h: isEgg ? 14 : 12,
+            rot: Math.random() * Math.PI,
+            vr: (Math.random() - 0.5) * 0.2,
+            type: isEgg ? "egg" : "foot",
+            color: isEgg ? "#fde68a" : "#86efac",
+          });
+        }
+        animate();
+        setTimeout(() => (confetti = []), 5200);
+      }
+
+      function animate() {
+        ctx.clearRect(0, 0, innerWidth, innerHeight);
+        for (const p of confetti) {
+          p.y += p.s;
+          p.x += Math.sin(p.y * 0.02) * 0.6;
+          p.rot += p.vr;
+          ctx.save();
+          ctx.translate(p.x, p.y);
+          ctx.rotate(p.rot);
+          ctx.fillStyle = p.color;
+          if (p.type === "egg") {
+            ctx.beginPath();
+            ctx.ellipse(0, 0, p.w / 2, p.h / 2, 0, 0, Math.PI * 2);
+            ctx.fill();
+          } else {
+            ctx.beginPath();
+            ctx.arc(-3, 0, 4, 0, Math.PI * 2);
+            ctx.arc(3, 0, 4, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.restore();
+        }
+        if (confetti.length) requestAnimationFrame(animate);
+      }
+    </script>
+  </body>
+</html>
